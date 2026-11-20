@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<AssignMessage async="false" continueOnError="false" enabled="true" name="AM-SetResponseHeaders">
+  <DisplayName>AM-SetResponseHeaders</DisplayName>
+  <Set>
+    <Headers>
+      <Header name="x-gateway-model">{flow.target_model}</Header>
+      <Header name="x-gateway-prompt-tokens">{flow.promptTokenCount}</Header>
+      <Header name="x-gateway-candidates-tokens">{flow.candidatesTokenCount}</Header>
+      <Header name="x-gateway-total-tokens">{flow.totalTokenCount}</Header>
+    </Headers>
+  </Set>
+  <IgnoreUnresolvedVariables>true</IgnoreUnresolvedVariables>
+  <AssignTo createNew="false" transport="http" type="response"/>
+</AssignMessage>

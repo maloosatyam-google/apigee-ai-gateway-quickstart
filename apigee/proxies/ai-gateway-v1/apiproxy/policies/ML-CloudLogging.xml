@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<MessageLogging continueOnError="true" enabled="true" name="ML-CloudLogging">
+  <DisplayName>ML-CloudLogging</DisplayName>
+  <CloudLogging>
+    <LogName>projects/{organization.name}/logs/apigee</LogName>
+    <Message contentType="application/json">
+      {
+        "organizationName": "{organization.name}",
+        "environmentName": "{environment.name}",
+        "apiProxyName": "{apiproxy.name}",
+        "apiProxyRevision": "{apiproxy.revision}",
+        "proxyPathSuffix": "{proxy.pathsuffix}",
+        "trackingId": "{messageid}",
+        "developerApp": "{developer.app.name}",
+        "apiProduct": "{apiproduct.name}",
+        "model": "{flow.target_model}",
+        "promptTokens": "{flow.promptTokenCount}",
+        "candidatesTokens": "{flow.candidatesTokenCount}",
+        "totalTokens": "{flow.totalTokenCount}",
+        "prompt": "{escapeJSON(flow.userPrompt)}",
+        "response": "{escapeJSON(flow.responseText)}",
+        "responseStatusCode": "{response.status.code}",
+        "errorStatusCode": "{error.status.code}",
+        "faultName": "{fault.name}",
+        "errorMessage": "{error.message}"
+      }
+    </Message>
+    <ResourceType>api</ResourceType>
+  </CloudLogging>
+</MessageLogging>

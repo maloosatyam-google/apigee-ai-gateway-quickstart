@@ -1,0 +1,18 @@
+project_id = "your-gcp-project-id"
+region     = "us-central1"
+
+# PAYG (Pay-as-you-go) or SUBSCRIPTION
+billing_type = "PAYG"
+
+# external = Global External HTTPS Load Balancer + nip.io domain
+# internal = Internal PSC endpoint
+routing = "external"
+
+# Vertex AI Gemini model & LLM Token Quota
+gemini_model              = "gemini-2.5-flash"
+llm_token_quota_limit     = 1000
+llm_token_quota_interval  = 1
+llm_token_quota_time_unit = "minute"
+
+# Sample developer identity
+developer_email = "ai-developer@example.com"
