@@ -28,6 +28,34 @@ EOF
   fi
 fi
 
+# Align Terraform credentials with the active gcloud CLI account when ADC is unset or logged into a different user
+if [ -z "${GOOGLE_OAUTH_ACCESS_TOKEN:-}" ] && [ -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
+  CLI_ACCT="$(gcloud config get-value account 2>/dev/null || true)"
+  ADC_TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null || true)"
+  ADC_ACCT=""
+  if [ -n "$ADC_TOKEN" ]; then
+    ADC_ACCT="$(curl -s "https://oauth2.googleapis.com/tokeninfo?access_token=${ADC_TOKEN}" | python3 -c "import json,sys; print(json.load(sys.stdin).get('email',''))" 2>/dev/null || true)"
+  fi
+  if [ -n "$CLI_ACCT" ] && [ "$CLI_ACCT" != "$ADC_ACCT" ]; then
+    warn "ADC account (${ADC_ACCT:-none}) differs from active gcloud account (${CLI_ACCT}); using gcloud CLI access token for Terraform."
+    export GOOGLE_OAUTH_ACCESS_TOKEN="$(gcloud auth print-access-token)"
+  fi
+fi
+
+# Extract project_id from terraform.tfvars to bootstrap foundational APIs on brand-new projects
+TF_PROJECT_ID="$(python3 -c '
+import re, sys
+txt = open(sys.argv[1]).read()
+m = re.search(r"^\s*project_id\s*=\s*\"([^\"]+)\"", txt, re.M)
+print(m.group(1) if m else "")
+' "${TF_DIR}/terraform.tfvars")"
+
+if [ -n "$TF_PROJECT_ID" ]; then
+  log "Bootstrapping Service Usage & Cloud Resource Manager APIs on ${TF_PROJECT_ID}"
+  gcloud services enable serviceusage.googleapis.com cloudresourcemanager.googleapis.com --project="${TF_PROJECT_ID}"
+  ok "Bootstrap APIs enabled"
+fi
+
 log "Initializing Terraform"
 terraform -chdir="${TF_DIR}" init -upgrade=false
 
@@ -39,7 +67,7 @@ echo "  Apigee Org:         $(terraform -chdir="${TF_DIR}" output -raw apigee_or
 echo "  Environment:        $(terraform -chdir="${TF_DIR}" output -raw apigee_environment)"
 echo "  Proxy SA:           $(terraform -chdir="${TF_DIR}" output -raw apigee_sa_email)"
 echo "  Gateway URL:        $(terraform -chdir="${TF_DIR}" output -raw gateway_url)"
-echo "  Custom Report:      $(terraform -chdir="${TF_DIR}" output -raw custom_report_name)"
+echo "  Custom Report:      $(terraform -chdir="${TF_DIR}" output -raw custom_report_display_name)"
 
 if [ "${SKIP_VERIFY:-false}" != "true" ]; then
   log "Running verification suite"

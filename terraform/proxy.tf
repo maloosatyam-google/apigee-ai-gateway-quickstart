@@ -22,7 +22,7 @@ data "archive_file" "ai_gateway_proxy" {
 }
 
 resource "google_apigee_api" "ai_gateway" {
-  org_id         = google_apigee_organization.org.id
+  org_id         = google_apigee_organization.org.name
   name           = "ai-gateway-v1"
   config_bundle  = data.archive_file.ai_gateway_proxy.output_path
   detect_md5hash = data.archive_file.ai_gateway_proxy.output_md5
@@ -30,7 +30,7 @@ resource "google_apigee_api" "ai_gateway" {
 
 resource "google_apigee_api_deployment" "ai_gateway" {
   for_each        = var.environments
-  org_id          = google_apigee_organization.org.id
+  org_id          = google_apigee_organization.org.name
   environment     = google_apigee_environment.env[each.key].name
   proxy_id        = google_apigee_api.ai_gateway.name
   revision        = google_apigee_api.ai_gateway.latest_revision_id

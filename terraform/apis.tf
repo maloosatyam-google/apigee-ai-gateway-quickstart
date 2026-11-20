@@ -1,6 +1,9 @@
 locals {
   required_apis = toset([
+    "serviceusage.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
     "apigee.googleapis.com",
+    "apihub.googleapis.com",
     "compute.googleapis.com",
     "aiplatform.googleapis.com",
     "modelarmor.googleapis.com",

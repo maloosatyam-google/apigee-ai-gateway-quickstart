@@ -70,13 +70,14 @@ resource "google_compute_url_map" "apigee" {
 
 resource "google_compute_managed_ssl_certificate" "apigee" {
   count = local.external ? 1 : 0
-  name  = "${var.lb_name_prefix}-cert"
+  name  = "${var.lb_name_prefix}-cert-${substr(md5(join(",", local.all_hostnames)), 0, 6)}"
   managed {
     domains = local.all_hostnames
   }
   lifecycle {
     create_before_destroy = true
   }
+  depends_on = [google_compute_url_map.apigee]
 }
 
 resource "google_compute_target_https_proxy" "apigee" {

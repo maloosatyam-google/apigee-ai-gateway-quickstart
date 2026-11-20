@@ -4,7 +4,7 @@
 resource "google_apigee_data_collector" "model_name" {
   org_id            = google_apigee_organization.org.id
   data_collector_id = "dc_model_name"
-  description       = "LLM target model name (e.g., gemini-2.5-flash)"
+  description       = "LLM target model name (e.g., gemini-3.6-flash)"
   type              = "STRING"
 }
 
@@ -35,6 +35,11 @@ resource "google_apigee_data_collector" "total_token_count" {
 # so we look up existing reports via ?expand=true matching displayName.
 # -----------------------------------------------------------------------------
 resource "terraform_data" "llm_consumption_report" {
+  triggers_replace = [
+    google_apigee_organization.org.name,
+    var.custom_report_name,
+  ]
+
   input = {
     org          = google_apigee_organization.org.name
     report_name  = var.custom_report_name
@@ -44,35 +49,19 @@ resource "terraform_data" "llm_consumption_report" {
   provisioner "local-exec" {
     command = <<-EOT
       set -euo pipefail
-      TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null || gcloud auth print-access-token)"
+      TMP_LIST="$(mktemp)"
+      TMP_BODY="$(mktemp)"
+      trap 'rm -f "$TMP_LIST" "$TMP_BODY"' EXIT
+      TOKEN="$${GOOGLE_OAUTH_ACCESS_TOKEN:-$(gcloud auth print-access-token 2>/dev/null || gcloud auth application-default print-access-token)}"
       URL="https://apigee.googleapis.com/v1/organizations/${self.input.org}/reports"
-      EXISTING_ID=$(curl -sf -H "Authorization: Bearer $TOKEN" "$URL?expand=true" | python3 -c '
-import json, sys
-data = json.load(sys.stdin)
-for r in data.get("qualifier", []):
-    if r.get("displayName") == "${self.input.display_name}" or r.get("name") == "${self.input.report_name}":
-        print(r["name"])
-        break
-')
+      curl -4 -sf --retry 3 --retry-delay 5 -H "Authorization: Bearer $TOKEN" "$URL?expand=true" -o "$TMP_LIST"
+      EXISTING_ID=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(next((r["name"] for r in d.get("qualifier",[]) if r.get("displayName")==sys.argv[2] or r.get("name")==sys.argv[3]), ""))' "$TMP_LIST" "${self.input.display_name}" "${self.input.report_name}")
       REPORT_ID="$${EXISTING_ID:-${self.input.report_name}}"
-      PAYLOAD=$(cat <<JSON
-      {
-        "name": "$REPORT_ID",
-        "displayName": "${self.input.display_name}",
-        "metrics": [
-          {"name": "dc_prompt_token_count", "function": "sum"},
-          {"name": "dc_candidates_token_count", "function": "sum"},
-          {"name": "dc_total_token_count", "function": "sum"}
-        ],
-        "dimensions": ["dc_model_name", "api_product", "developer_app"],
-        "chartType": "line"
-      }
-      JSON
-      )
+      python3 -c 'import json,sys; json.dump({"name":sys.argv[2],"displayName":sys.argv[3],"metrics":[{"name":"dc_prompt_token_count","function":"sum"},{"name":"dc_candidates_token_count","function":"sum"},{"name":"dc_total_token_count","function":"sum"}],"dimensions":["dc_model_name","api_product","developer_app"],"chartType":"line"}, open(sys.argv[1],"w"))' "$TMP_BODY" "$REPORT_ID" "${self.input.display_name}"
       if [ -n "$EXISTING_ID" ]; then
-        curl -sf -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$PAYLOAD" "$URL/$EXISTING_ID" >/dev/null
+        curl -4 -sf --retry 3 --retry-delay 5 -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data-binary @"$TMP_BODY" "$URL/$EXISTING_ID" >/dev/null
       else
-        curl -sf -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$PAYLOAD" "$URL" >/dev/null
+        curl -4 -sf --retry 3 --retry-delay 5 -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data-binary @"$TMP_BODY" "$URL" >/dev/null
       fi
     EOT
   }
@@ -80,27 +69,23 @@ for r in data.get("qualifier", []):
   provisioner "local-exec" {
     when    = destroy
     command = <<-EOT
-      TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null || gcloud auth print-access-token 2>/dev/null || true)"
+      TMP_LIST="$(mktemp)"
+      trap 'rm -f "$TMP_LIST"' EXIT
+      TOKEN="$${GOOGLE_OAUTH_ACCESS_TOKEN:-$(gcloud auth print-access-token 2>/dev/null || gcloud auth application-default print-access-token 2>/dev/null || true)}"
       if [ -n "$TOKEN" ]; then
         URL="https://apigee.googleapis.com/v1/organizations/${self.input.org}/reports"
-        EXISTING_IDS=$(curl -sf -H "Authorization: Bearer $TOKEN" "$URL?expand=true" 2>/dev/null | python3 -c '
-import json, sys
-try:
-    data = json.load(sys.stdin)
-    for r in data.get("qualifier", []):
-        if r.get("displayName") == "${self.input.display_name}" or r.get("name") == "${self.input.report_name}":
-            print(r["name"])
-except Exception:
-    pass
-' || true)
-        for id in $EXISTING_IDS; do
-          curl -s -X DELETE -H "Authorization: Bearer $TOKEN" "$URL/$id" >/dev/null || true
-        done
+        if curl -4 -sf -H "Authorization: Bearer $TOKEN" "$URL?expand=true" -o "$TMP_LIST" 2>/dev/null; then
+          EXISTING_IDS=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(" ".join(r["name"] for r in d.get("qualifier",[]) if r.get("displayName")==sys.argv[2] or r.get("name")==sys.argv[3]))' "$TMP_LIST" "${self.input.display_name}" "${self.input.report_name}" 2>/dev/null || true)
+          for id in $EXISTING_IDS; do
+            curl -4 -s -X DELETE -H "Authorization: Bearer $TOKEN" "$URL/$id" >/dev/null || true
+          done
+        fi
       fi
     EOT
   }
 
   depends_on = [
+    google_apigee_instance_attachment.env,
     google_apigee_data_collector.model_name,
     google_apigee_data_collector.prompt_token_count,
     google_apigee_data_collector.candidates_token_count,

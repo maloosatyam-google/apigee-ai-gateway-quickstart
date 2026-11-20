@@ -9,7 +9,7 @@ billing_type = "PAYG"
 routing = "external"
 
 # Vertex AI Gemini model & LLM Token Quota
-gemini_model              = "gemini-2.5-flash"
+gemini_model              = "gemini-3.6-flash"
 llm_token_quota_limit     = 1000
 llm_token_quota_interval  = 1
 llm_token_quota_time_unit = "minute"

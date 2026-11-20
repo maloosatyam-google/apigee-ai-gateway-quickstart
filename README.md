@@ -30,6 +30,7 @@ flowchart LR
 | Component | Resource / Name | Purpose |
 |---|---|---|
 | **Apigee X** | Organization, Instance, `dev` Env, EnvGroup, Analytics Add-on | Non-peered Apigee X (`PAYG` or `SUBSCRIPTION`) with northbound PSC + Global External HTTPS Load Balancer (`timeout_sec = 300`) |
+| **API Hub** | `apihub.googleapis.com` + Auto-provisioned Instance & Attachment | Enabled alongside Apigee X (which auto-creates the API Hub instance and runtime attachment for proxy discovery & AI Performance analytics) |
 | **Service Account** | `apigee-ai-gateway-sa` | Dedicated proxy runtime SA with `roles/aiplatform.user`, `roles/modelarmor.user`, `roles/logging.logWriter`, and `roles/iam.serviceAccountTokenCreator` for the Apigee service agent |
 | **Model Armor** | `apigee-sanitize-user-prompt`, `apigee-sanitize-model-response` | Blocks prompt injection, jailbreaks, RAI violations, and malicious URIs on requests (across all turns + `systemInstruction`), and blocks RAI + SDP violations on buffered and SSE streaming responses (`<ContinuousScan>true</ContinuousScan>`) |
 | **AI Gateway Proxy** | `ai-gateway-v1` (`/ai/v1`) | Dedicated buffered (`gemini-vertex-target`) and SSE streaming (`gemini-vertex-stream-target`) endpoints for Vertex AI Gemini, plus `SpikeArrest` and `404` path validation |
@@ -82,7 +83,7 @@ flowchart LR
 
 ```bash
 curl -sS -X POST \
-  "$(terraform -chdir=terraform output -raw gateway_url)/models/gemini-2.5-flash:generateContent" \
+  "$(terraform -chdir=terraform output -raw gateway_url)/models/gemini-3.6-flash:generateContent" \
   -H "Content-Type: application/json" \
   -H "x-apikey: $(terraform -chdir=terraform output -raw api_key)" \
   -d '{
@@ -96,7 +97,7 @@ curl -sS -X POST \
 
 ```bash
 curl -N -sS -X POST \
-  "$(terraform -chdir=terraform output -raw gateway_url)/models/gemini-2.5-flash:streamGenerateContent?alt=sse" \
+  "$(terraform -chdir=terraform output -raw gateway_url)/models/gemini-3.6-flash:streamGenerateContent?alt=sse" \
   -H "Content-Type: application/json" \
   -H "x-apikey: $(terraform -chdir=terraform output -raw api_key)" \
   -d '{

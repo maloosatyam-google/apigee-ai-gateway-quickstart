@@ -87,7 +87,7 @@ variable "proxy_sa_id" {
 variable "gemini_model" {
   description = "Vertex AI Gemini model ID allowed by the API Product and LLM Token Quota."
   type        = string
-  default     = "gemini-2.5-flash"
+  default     = "gemini-3.6-flash"
 }
 
 variable "llm_token_quota_limit" {

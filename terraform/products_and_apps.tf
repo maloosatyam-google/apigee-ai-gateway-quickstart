@@ -4,6 +4,16 @@
 #  expose llmOperationGroup / llmTokenQuota in the Terraform provider.)
 # -----------------------------------------------------------------------------
 resource "terraform_data" "ai_gateway_product" {
+  triggers_replace = [
+    google_apigee_organization.org.name,
+    var.api_product_name,
+    jsonencode(keys(var.environments)),
+    var.gemini_model,
+    tostring(var.llm_token_quota_limit),
+    tostring(var.llm_token_quota_interval),
+    var.llm_token_quota_time_unit,
+  ]
+
   input = {
     org          = google_apigee_organization.org.name
     product_name = var.api_product_name
@@ -19,7 +29,7 @@ resource "terraform_data" "ai_gateway_product" {
       set -euo pipefail
       TMP_RESP="$(mktemp)"
       trap 'rm -f "$TMP_RESP"' EXIT
-      TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null || gcloud auth print-access-token)"
+      TOKEN="$${GOOGLE_OAUTH_ACCESS_TOKEN:-$(gcloud auth print-access-token 2>/dev/null || gcloud auth application-default print-access-token)}"
       URL="https://apigee.googleapis.com/v1/organizations/${self.input.org}/apiproducts"
       PAYLOAD=$(cat <<JSON
       {
@@ -53,11 +63,11 @@ resource "terraform_data" "ai_gateway_product" {
       }
       JSON
       )
-      CODE=$(curl -s -o "$TMP_RESP" -w "%%{http_code}" -H "Authorization: Bearer $TOKEN" "$URL/${self.input.product_name}")
+      CODE=$(curl -4 -s --retry 3 --retry-delay 5 -o "$TMP_RESP" -w "%%{http_code}" -H "Authorization: Bearer $TOKEN" "$URL/${self.input.product_name}")
       if [ "$CODE" = "200" ]; then
-        curl -sf -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$PAYLOAD" "$URL/${self.input.product_name}" >/dev/null
+        curl -4 -sf --retry 3 --retry-delay 5 -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$PAYLOAD" "$URL/${self.input.product_name}" >/dev/null
       else
-        curl -sf -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$PAYLOAD" "$URL" >/dev/null
+        curl -4 -sf --retry 3 --retry-delay 5 -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$PAYLOAD" "$URL" >/dev/null
       fi
     EOT
   }
@@ -65,7 +75,7 @@ resource "terraform_data" "ai_gateway_product" {
   provisioner "local-exec" {
     when    = destroy
     command = <<-EOT
-      TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null || gcloud auth print-access-token 2>/dev/null || true)"
+      TOKEN="$${GOOGLE_OAUTH_ACCESS_TOKEN:-$(gcloud auth print-access-token 2>/dev/null || gcloud auth application-default print-access-token 2>/dev/null || true)}"
       if [ -n "$TOKEN" ]; then
         curl -s -X DELETE -H "Authorization: Bearer $TOKEN" \
           "https://apigee.googleapis.com/v1/organizations/${self.input.org}/apiproducts/${self.input.product_name}" >/dev/null || true
@@ -85,6 +95,8 @@ resource "google_apigee_developer" "ai_dev" {
   first_name = var.developer_first_name
   last_name  = var.developer_last_name
   user_name  = split("@", var.developer_email)[0]
+
+  depends_on = [google_apigee_instance_attachment.env]
 }
 
 resource "google_apigee_developer_app" "ai_app" {
