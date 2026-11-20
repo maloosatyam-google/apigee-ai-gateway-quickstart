@@ -1,6 +1,6 @@
 # Apigee X AI Gateway Quickstart (Terraform)
 
-A customer-shareable, end-to-end Terraform starter repository that provisions **Apigee X** (non-peered / Private Service Connect), a dedicated **Proxy Runtime Service Account**, **Model Armor** prompt & response sanitization templates, **Data Collectors**, a **Custom LLM Consumption Report**, **API Product** (with LLM Token Quota), **Developer**, **Developer App**, and deploys the **`ai-gateway-v1`** proxy targeting **Vertex AI Gemini**.
+A customer-shareable, end-to-end Terraform starter repository that provisions **Apigee X** (non-peered / Private Service Connect), a dedicated **Proxy Runtime Service Account**, **Model Armor** prompt & response sanitization templates, **Data Collectors**, a **Custom LLM Consumption Report**, **API Product** (with LLM Token Quota), **Developer**, **Developer App**, and deploys the **`ai-gateway-v1`** proxy targeting **Vertex AI Gemini** (buffered and SSE streaming).
 
 ## Architecture
 
@@ -9,13 +9,13 @@ flowchart LR
     Client["Client / App<br/>(x-apikey)"] -->|"HTTPS (PSC + Global LB)"| Apigee["Apigee X<br/>ai-gateway-v1"]
 
     subgraph Policies["Proxy Policy Pipeline"]
-        VA["1. VerifyAPIKey"] --> SUP["2. Model Armor<br/>SanitizeUserPrompt"]
+        VA["1. VerifyAPIKey &<br/>SpikeArrest"] --> SUP["2. Model Armor<br/>SanitizeUserPrompt"]
         SUP --> LTQ1["3. LLMTokenQuota<br/>(EnforceOnly)"]
-        LTQ1 --> Target["4. Vertex AI Gemini<br/>(Proxy SA Token)"]
-        Target --> LTQ2["5. LLMTokenQuota<br/>(CountOnly)"]
-        LTQ2 --> SMR["6. Model Armor<br/>SanitizeModelResponse"]
-        SMR --> DC["7. DataCapture<br/>(Model & Tokens)"]
-        DC --> ML["8. MessageLogging<br/>(Cloud Logging)"]
+        LTQ1 --> Target["4. Vertex AI Gemini<br/>(Buffered or SSE Stream Target)"]
+        Target --> SMR["5. Model Armor<br/>SanitizeModelResponse<br/>(Buffered + SSE ContinuousScan)"]
+        SMR --> LTQ2["6. LLMTokenQuota<br/>(CountOnly)"]
+        LTQ2 --> DC["7. DataCapture<br/>(Model & Tokens)"]
+        DC --> ML["8. MessageLogging<br/>(Metadata to Cloud Logging)"]
     end
 
     Apigee --> Policies
@@ -29,18 +29,20 @@ flowchart LR
 
 | Component | Resource / Name | Purpose |
 |---|---|---|
-| **Apigee X** | Organization, Instance, `dev` Env, EnvGroup, Analytics Add-on | Non-peered Apigee X (`PAYG` or `SUBSCRIPTION`) with northbound PSC + Global External HTTPS Load Balancer |
+| **Apigee X** | Organization, Instance, `dev` Env, EnvGroup, Analytics Add-on | Non-peered Apigee X (`PAYG` or `SUBSCRIPTION`) with northbound PSC + Global External HTTPS Load Balancer (`timeout_sec = 300`) |
 | **Service Account** | `apigee-ai-gateway-sa` | Dedicated proxy runtime SA with `roles/aiplatform.user`, `roles/modelarmor.user`, `roles/logging.logWriter`, and `roles/iam.serviceAccountTokenCreator` for the Apigee service agent |
-| **Model Armor** | `apigee-sanitize-user-prompt`, `apigee-sanitize-model-response` | Prompt injection / jailbreak / RAI / malicious URI screening on requests; RAI + SDP screening on responses |
-| **AI Gateway Proxy** | `ai-gateway-v1` (`/ai/v1`) | Supports Vertex AI Gemini `:generateContent` and `:streamGenerateContent?alt=sse` |
+| **Model Armor** | `apigee-sanitize-user-prompt`, `apigee-sanitize-model-response` | Blocks prompt injection, jailbreaks, RAI violations, and malicious URIs on requests (across all turns + `systemInstruction`), and blocks RAI + SDP violations on buffered and SSE streaming responses (`<ContinuousScan>true</ContinuousScan>`) |
+| **AI Gateway Proxy** | `ai-gateway-v1` (`/ai/v1`) | Dedicated buffered (`gemini-vertex-target`) and SSE streaming (`gemini-vertex-stream-target`) endpoints for Vertex AI Gemini, plus `SpikeArrest` and `404` path validation |
 | **Data Collectors** | `dc_model_name`, `dc_prompt_token_count`, `dc_candidates_token_count`, `dc_total_token_count` | Captures per-request model and token usage into Apigee Analytics |
-| **Custom Report** | `llm-consumption-report` | Aggregates prompt, candidate, and total tokens by `dc_model_name`, `api_product`, and `developer_app` |
+| **Custom Report** | `LLM Token Consumption Report` | Aggregates prompt, candidate, and total tokens by `dc_model_name`, `api_product`, and `developer_app` |
 | **Product, Dev & App** | `ai-gateway-product`, `ai-developer@example.com`, `ai-gateway-quickstart-app` | Configures `llmOperationGroup` with `llmTokenQuota` (default: 1,000 tokens / minute) and outputs an API key |
+
+> **Privacy by Default:** `ML-CloudLogging` records request metadata, model name, token counts (`promptTokens`, `candidatesTokens`, `thoughtsTokens`, `totalTokens`), and fault codes to `projects/{org}/logs/apigee` without logging raw user prompts or model response text.
 
 ## Prerequisites
 
 - [Terraform](https://developer.hashicorp.com/terraform/install) `>= 1.5`
-- [Google Cloud CLI (`gcloud`)](https://cloud.google.com/sdk/docs/install) authenticated (`gcloud auth login` and `gcloud auth application-default login`)
+- [Google Cloud CLI (`gcloud`)](https://cloud.google.com/sdk/docs/install) authenticated (`gcloud auth application-default login` and `gcloud auth login`)
 - A GCP Project with billing enabled and Owner / Editor + IAM Admin permissions
 - `curl` and `python3`
 
@@ -69,11 +71,12 @@ flowchart LR
    ```
 
    This verifies:
-   - Missing API key returns `HTTP 401`
-   - Valid Gemini request returns `HTTP 200` with `x-gateway-total-tokens` header
-   - Prompt injection is blocked by Model Armor
-   - Repeated requests trigger `HTTP 429` via `LLMTokenQuota`
-   - Custom report exists and `MessageLogging` entries appear in Cloud Logging
+   1. Missing API key returns `HTTP 401`
+   2. Valid Gemini buffered request returns `HTTP 200` with `x-gateway-total-tokens`
+   3. Valid Gemini SSE streaming request returns `HTTP 200` with `data:` frames
+   4. Prompt injection is blocked by Model Armor
+   5. Repeated requests trigger `HTTP 429` via `LLMTokenQuota`
+   6. Custom report exists in Apigee and `MessageLogging` entries appear in Cloud Logging
 
 ## Sample Request
 

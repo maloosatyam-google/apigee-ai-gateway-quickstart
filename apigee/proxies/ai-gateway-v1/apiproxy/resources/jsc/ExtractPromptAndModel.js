@@ -1,4 +1,4 @@
-// Extract prompt and model from Vertex AI Gemini request payload (ES5/Rhino)
+// Extract prompt (across all turns + systemInstruction) and model from Vertex AI Gemini request (ES5/Rhino)
 var pathSuffix = context.getVariable("proxy.pathsuffix") || "";
 var altParam = String(context.getVariable("request.queryparam.alt") || "").toLowerCase();
 var isStreaming = /:streamGenerateContent$/i.test(pathSuffix) || altParam === "sse";
@@ -17,23 +17,32 @@ var reqContent = context.getVariable("request.content") || "";
 if (reqContent) {
   try {
     var payload = JSON.parse(reqContent);
-    var prompt = "";
+    var promptChunks = [];
 
-    if (payload.contents && Array.isArray(payload.contents) && payload.contents.length > 0) {
-      var lastContent = payload.contents[payload.contents.length - 1];
-      if (lastContent && lastContent.parts && Array.isArray(lastContent.parts)) {
-        var partsText = [];
-        for (var p = 0; p < lastContent.parts.length; p++) {
-          if (lastContent.parts[p] && lastContent.parts[p].text) {
-            partsText.push(lastContent.parts[p].text);
-          }
+    if (payload.systemInstruction && payload.systemInstruction.parts && Array.isArray(payload.systemInstruction.parts)) {
+      for (var s = 0; s < payload.systemInstruction.parts.length; s++) {
+        if (payload.systemInstruction.parts[s] && payload.systemInstruction.parts[s].text) {
+          promptChunks.push(payload.systemInstruction.parts[s].text);
         }
-        prompt = partsText.join(" ");
       }
-    } else if (payload.prompt) {
-      prompt = (typeof payload.prompt === "string") ? payload.prompt : JSON.stringify(payload.prompt);
     }
 
+    if (payload.contents && Array.isArray(payload.contents)) {
+      for (var c = 0; c < payload.contents.length; c++) {
+        var turn = payload.contents[c];
+        if (turn && turn.parts && Array.isArray(turn.parts)) {
+          for (var p = 0; p < turn.parts.length; p++) {
+            if (turn.parts[p] && turn.parts[p].text) {
+              promptChunks.push(turn.parts[p].text);
+            }
+          }
+        }
+      }
+    } else if (payload.prompt) {
+      promptChunks.push((typeof payload.prompt === "string") ? payload.prompt : JSON.stringify(payload.prompt));
+    }
+
+    var prompt = promptChunks.join("\n").trim();
     if (prompt) {
       context.setVariable("flow.userPrompt", prompt);
     }

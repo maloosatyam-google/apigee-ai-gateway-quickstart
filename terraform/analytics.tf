@@ -25,28 +25,40 @@ resource "google_apigee_data_collector" "candidates_token_count" {
 resource "google_apigee_data_collector" "total_token_count" {
   org_id            = google_apigee_organization.org.id
   data_collector_id = "dc_total_token_count"
-  description       = "Total token count (prompt + candidates) reported by Vertex AI"
+  description       = "Total token count (prompt + candidates + thoughts) reported by Vertex AI"
   type              = "INTEGER"
 }
 
 # -----------------------------------------------------------------------------
 # Custom Report for LLM Token Consumption (via Apigee Reports REST API)
+# Note: Apigee X assigns a server-generated UUID to CustomReport.name on POST,
+# so we look up existing reports via ?expand=true matching displayName.
 # -----------------------------------------------------------------------------
 resource "terraform_data" "llm_consumption_report" {
   input = {
-    org         = google_apigee_organization.org.name
-    report_name = var.custom_report_name
+    org          = google_apigee_organization.org.name
+    report_name  = var.custom_report_name
+    display_name = "LLM Token Consumption Report"
   }
 
   provisioner "local-exec" {
     command = <<-EOT
       set -euo pipefail
-      TOKEN="$(gcloud auth print-access-token)"
+      TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null || gcloud auth print-access-token)"
       URL="https://apigee.googleapis.com/v1/organizations/${self.input.org}/reports"
-      PAYLOAD=$(cat <<'JSON'
+      EXISTING_ID=$(curl -sf -H "Authorization: Bearer $TOKEN" "$URL?expand=true" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+for r in data.get("qualifier", []):
+    if r.get("displayName") == "${self.input.display_name}" or r.get("name") == "${self.input.report_name}":
+        print(r["name"])
+        break
+')
+      REPORT_ID="$${EXISTING_ID:-${self.input.report_name}}"
+      PAYLOAD=$(cat <<JSON
       {
-        "name": "${self.input.report_name}",
-        "displayName": "LLM Token Consumption Report",
+        "name": "$REPORT_ID",
+        "displayName": "${self.input.display_name}",
         "metrics": [
           {"name": "dc_prompt_token_count", "function": "sum"},
           {"name": "dc_candidates_token_count", "function": "sum"},
@@ -57,9 +69,8 @@ resource "terraform_data" "llm_consumption_report" {
       }
       JSON
       )
-      CODE=$(curl -s -o /tmp/apigee_report_resp.json -w "%%{http_code}" -H "Authorization: Bearer $TOKEN" "$URL/${self.input.report_name}")
-      if [ "$CODE" = "200" ]; then
-        curl -sf -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$PAYLOAD" "$URL/${self.input.report_name}" >/dev/null
+      if [ -n "$EXISTING_ID" ]; then
+        curl -sf -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$PAYLOAD" "$URL/$EXISTING_ID" >/dev/null
       else
         curl -sf -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$PAYLOAD" "$URL" >/dev/null
       fi
@@ -69,10 +80,22 @@ resource "terraform_data" "llm_consumption_report" {
   provisioner "local-exec" {
     when    = destroy
     command = <<-EOT
-      TOKEN="$(gcloud auth print-access-token 2>/dev/null || true)"
+      TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null || gcloud auth print-access-token 2>/dev/null || true)"
       if [ -n "$TOKEN" ]; then
-        curl -s -X DELETE -H "Authorization: Bearer $TOKEN" \
-          "https://apigee.googleapis.com/v1/organizations/${self.input.org}/reports/${self.input.report_name}" >/dev/null || true
+        URL="https://apigee.googleapis.com/v1/organizations/${self.input.org}/reports"
+        EXISTING_IDS=$(curl -sf -H "Authorization: Bearer $TOKEN" "$URL?expand=true" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    for r in data.get("qualifier", []):
+        if r.get("displayName") == "${self.input.display_name}" or r.get("name") == "${self.input.report_name}":
+            print(r["name"])
+except Exception:
+    pass
+' || true)
+        for id in $EXISTING_IDS; do
+          curl -s -X DELETE -H "Authorization: Bearer $TOKEN" "$URL/$id" >/dev/null || true
+        done
       fi
     EOT
   }

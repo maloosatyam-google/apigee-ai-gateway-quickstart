@@ -6,6 +6,7 @@
       <Header name="x-gateway-model">{flow.target_model}</Header>
       <Header name="x-gateway-prompt-tokens">{flow.promptTokenCount}</Header>
       <Header name="x-gateway-candidates-tokens">{flow.candidatesTokenCount}</Header>
+      <Header name="x-gateway-thoughts-tokens">{flow.thoughtsTokenCount}</Header>
       <Header name="x-gateway-total-tokens">{flow.totalTokenCount}</Header>
     </Headers>
   </Set>

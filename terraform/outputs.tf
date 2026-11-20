@@ -23,6 +23,11 @@ output "model_armor_response_template" {
   value       = google_model_armor_template.sanitize_model_response.name
 }
 
+output "gemini_model" {
+  description = "Configured Vertex AI Gemini model ID."
+  value       = var.gemini_model
+}
+
 output "gateway_host" {
   description = "Hostname for the primary Apigee environment group."
   value       = local.hostnames[local.env_group_of[local.primary_env]][0]
@@ -45,8 +50,13 @@ output "api_key" {
 }
 
 output "custom_report_name" {
-  description = "Name of the Apigee custom report for LLM token consumption."
+  description = "Configured identifier/slug of the Apigee custom report for LLM token consumption."
   value       = var.custom_report_name
+}
+
+output "custom_report_display_name" {
+  description = "Display name of the Apigee custom report for LLM token consumption."
+  value       = "LLM Token Consumption Report"
 }
 
 output "smoke_test_command" {

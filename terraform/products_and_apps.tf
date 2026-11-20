@@ -17,7 +17,9 @@ resource "terraform_data" "ai_gateway_product" {
   provisioner "local-exec" {
     command = <<-EOT
       set -euo pipefail
-      TOKEN="$(gcloud auth print-access-token)"
+      TMP_RESP="$(mktemp)"
+      trap 'rm -f "$TMP_RESP"' EXIT
+      TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null || gcloud auth print-access-token)"
       URL="https://apigee.googleapis.com/v1/organizations/${self.input.org}/apiproducts"
       PAYLOAD=$(cat <<JSON
       {
@@ -51,7 +53,7 @@ resource "terraform_data" "ai_gateway_product" {
       }
       JSON
       )
-      CODE=$(curl -s -o /tmp/apigee_prod_resp.json -w "%%{http_code}" -H "Authorization: Bearer $TOKEN" "$URL/${self.input.product_name}")
+      CODE=$(curl -s -o "$TMP_RESP" -w "%%{http_code}" -H "Authorization: Bearer $TOKEN" "$URL/${self.input.product_name}")
       if [ "$CODE" = "200" ]; then
         curl -sf -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$PAYLOAD" "$URL/${self.input.product_name}" >/dev/null
       else
@@ -63,7 +65,7 @@ resource "terraform_data" "ai_gateway_product" {
   provisioner "local-exec" {
     when    = destroy
     command = <<-EOT
-      TOKEN="$(gcloud auth print-access-token 2>/dev/null || true)"
+      TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null || gcloud auth print-access-token 2>/dev/null || true)"
       if [ -n "$TOKEN" ]; then
         curl -s -X DELETE -H "Authorization: Bearer $TOKEN" \
           "https://apigee.googleapis.com/v1/organizations/${self.input.org}/apiproducts/${self.input.product_name}" >/dev/null || true

@@ -14,15 +14,15 @@
         "developerApp": "{developer.app.name}",
         "apiProduct": "{apiproduct.name}",
         "model": "{flow.target_model}",
+        "streaming": "{flow.is_streaming}",
         "promptTokens": "{flow.promptTokenCount}",
         "candidatesTokens": "{flow.candidatesTokenCount}",
+        "thoughtsTokens": "{flow.thoughtsTokenCount}",
         "totalTokens": "{flow.totalTokenCount}",
-        "prompt": "{escapeJSON(flow.userPrompt)}",
-        "response": "{escapeJSON(flow.responseText)}",
         "responseStatusCode": "{response.status.code}",
         "errorStatusCode": "{error.status.code}",
         "faultName": "{fault.name}",
-        "errorMessage": "{error.message}"
+        "errorMessage": "{escapeJSON(error.message)}"
       }
     </Message>
     <ResourceType>api</ResourceType>

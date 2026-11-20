@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <APIProxy revision="1" name="ai-gateway-v1">
   <DisplayName>AI Gateway v1 (Vertex AI Gemini)</DisplayName>
-  <Description>Apigee AI Gateway for Vertex AI Gemini with API Key verification, LLM Token Quota, Model Armor, Data Capture, and Cloud Logging.</Description>
+  <Description>Apigee AI Gateway for Vertex AI Gemini with API Key verification, Spike Arrest, LLM Token Quota, Model Armor (buffered + SSE ContinuousScan), Data Capture, and Cloud Logging.</Description>
   <Policies>
     <Policy>AM-RemoveAuthorization</Policy>
     <Policy>AM-RouteGeminiTarget</Policy>
@@ -13,9 +13,13 @@
     <Policy>JS-ExtractPromptAndModel</Policy>
     <Policy>JS-ProcessStreamEvent</Policy>
     <Policy>LTQ-TokenCount</Policy>
+    <Policy>LTQ-TokenCountSSE</Policy>
     <Policy>LTQ-TokenEnforce</Policy>
     <Policy>ML-CloudLogging</Policy>
+    <Policy>RF-UnsupportedPath</Policy>
+    <Policy>SA-SpikeArrest</Policy>
     <Policy>SMR-SanitizeModelResponse</Policy>
+    <Policy>SMR-SanitizeModelResponseSSE</Policy>
     <Policy>SUP-UserPrompt</Policy>
     <Policy>VA-VerifyAPIKey</Policy>
   </Policies>
@@ -27,6 +31,7 @@
     <Resource>jsc://ProcessStreamEvent.js</Resource>
   </Resources>
   <TargetEndpoints>
+    <TargetEndpoint>gemini-vertex-stream-target</TargetEndpoint>
     <TargetEndpoint>gemini-vertex-target</TargetEndpoint>
   </TargetEndpoints>
 </APIProxy>

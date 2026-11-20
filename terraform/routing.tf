@@ -56,6 +56,7 @@ resource "google_compute_backend_service" "apigee" {
   name                  = "${var.lb_name_prefix}-backend"
   protocol              = "HTTPS"
   load_balancing_scheme = "EXTERNAL_MANAGED"
+  timeout_sec           = 300
   backend {
     group = google_compute_region_network_endpoint_group.psc[0].id
   }
