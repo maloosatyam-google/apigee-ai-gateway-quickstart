@@ -38,12 +38,14 @@ resource "terraform_data" "llm_consumption_report" {
   triggers_replace = [
     google_apigee_organization.org.name,
     var.custom_report_name,
+    "(dc_model_name ne '(not set)' and api_product ne '(not set)' and developer_app ne '(not set)')",
   ]
 
   input = {
     org          = google_apigee_organization.org.name
     report_name  = var.custom_report_name
     display_name = "LLM Token Consumption Report"
+    filter       = "(dc_model_name ne '(not set)' and api_product ne '(not set)' and developer_app ne '(not set)')"
   }
 
   provisioner "local-exec" {
@@ -57,7 +59,7 @@ resource "terraform_data" "llm_consumption_report" {
       curl -4 -sf --retry 3 --retry-delay 5 -H "Authorization: Bearer $TOKEN" "$URL?expand=true" -o "$TMP_LIST"
       EXISTING_ID=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(next((r["name"] for r in d.get("qualifier",[]) if r.get("displayName")==sys.argv[2] or r.get("name")==sys.argv[3]), ""))' "$TMP_LIST" "${self.input.display_name}" "${self.input.report_name}")
       REPORT_ID="$${EXISTING_ID:-${self.input.report_name}}"
-      python3 -c 'import json,sys; json.dump({"name":sys.argv[2],"displayName":sys.argv[3],"metrics":[{"name":"dc_prompt_token_count","function":"sum"},{"name":"dc_candidates_token_count","function":"sum"},{"name":"dc_total_token_count","function":"sum"}],"dimensions":["dc_model_name","api_product","developer_app"],"chartType":"line"}, open(sys.argv[1],"w"))' "$TMP_BODY" "$REPORT_ID" "${self.input.display_name}"
+      python3 -c 'import json,sys; json.dump({"name":sys.argv[2],"displayName":sys.argv[3],"filter":sys.argv[4],"metrics":[{"name":"dc_prompt_token_count","function":"sum"},{"name":"dc_candidates_token_count","function":"sum"},{"name":"dc_total_token_count","function":"sum"}],"dimensions":["dc_model_name","api_product","developer_app"],"chartType":"line"}, open(sys.argv[1],"w"))' "$TMP_BODY" "$REPORT_ID" "${self.input.display_name}" "${self.input.filter}"
       if [ -n "$EXISTING_ID" ]; then
         curl -4 -sf --retry 3 --retry-delay 5 -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data-binary @"$TMP_BODY" "$URL/$EXISTING_ID" >/dev/null
       else
